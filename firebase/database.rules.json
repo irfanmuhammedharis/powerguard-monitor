@@ -1,0 +1,43 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "devices": {
+      "$deviceId": {
+        ".read": "auth != null",
+        ".validate": "$deviceId.matches(/^[A-Za-z0-9_-]{1,64}$/)",
+        "live": {
+          ".write": "auth != null && auth.uid === root.child('config/writers').child($deviceId).val()",
+          ".validate": "newData.hasChildren(['line_fault','fault_type','rain','smoke','voltage','current','ts'])",
+          "line_fault": { ".validate": "newData.isBoolean()" },
+          "fault_type": { ".validate": "newData.isString() && newData.val().length <= 32" },
+          "rain":       { ".validate": "newData.isBoolean()" },
+          "smoke":      { ".validate": "newData.isBoolean()" },
+          "smoke_ppm":  { ".validate": "newData.isNumber() && newData.val() >= 0" },
+          "voltage":    { ".validate": "newData.isNumber()" },
+          "current":    { ".validate": "newData.isNumber()" },
+          "ts":         { ".validate": "newData.isNumber()" },
+          "$other":     { ".validate": false }
+        },
+        "status": {
+          ".write": "auth != null && auth.uid === root.child('config/writers').child($deviceId).val()",
+          ".validate": "newData.hasChild('last_seen')",
+          "last_seen": { ".validate": "newData.isNumber()" },
+          "rssi":      { ".validate": "newData.isNumber()" },
+          "$other":    { ".validate": false }
+        },
+        "history": {
+          ".write": "auth != null && auth.uid === root.child('config/writers').child($deviceId).val()",
+          ".indexOn": ["ts"],
+          "$key": {
+            ".validate": "newData.hasChildren(['voltage','current','ts'])"
+          }
+        }
+      }
+    },
+    "config": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
