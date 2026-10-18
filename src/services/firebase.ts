@@ -27,4 +27,5 @@ export const statusRef = (deviceId: string) =>
   database().ref(`/devices/${deviceId}/status`);
 export const historyRef = (deviceId: string) =>
   database().ref(`/devices/${deviceId}/history`);
-export const connectionRef = () => database().ref('/.info/connected');
+// React Native Firebase only accepts this special path without a leading slash.
+export const connectionRef = () => database().ref('.info/connected');

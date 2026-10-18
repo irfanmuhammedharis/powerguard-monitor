@@ -30,6 +30,8 @@ The app never writes remote data. TypeScript models live in `src/types/models.ts
 | `rain` | boolean | yes | | |
 | `smoke` | boolean | yes | | |
 | `smoke_ppm` | number | no | ≥ 0 | Raw MQ reading or ppm; display only |
+| `tilt` | boolean | no | | `true` = unit moved > 10° from its power-on position; missing = `false` |
+| `tilt_deg` | number | no | ≥ 0 | Degrees from the power-on position; display only |
 | `voltage` | number | yes | finite, typically 0–500 | Volts (RMS for AC) |
 | `current` | number | yes | finite, ≥ 0 | Amps (RMS for AC) |
 | `ts` | number | yes | unix **seconds** (or ms, normalized) | Sample time from ESP32 NTP |

@@ -8,7 +8,7 @@ import {
 import type { Connectivity } from './connectivity';
 import { makeReading } from '../test/factories';
 
-const enabled = { line_fault: true, smoke: true, rain: true };
+const enabled = { line_fault: true, smoke: true, tilt: true, rain: true };
 
 type Reading = Parameters<typeof makeReading>[0];
 function run(
@@ -36,6 +36,12 @@ describe('reduceAlerts', () => {
     expect(effects[1]).toEqual([{ type: 'notify', key: 'smoke' }, { type: 'haptic' }]);
     expect(effects[2]).toEqual([]);
     expect(effects[3]).toEqual([]);
+  });
+
+  it('confirms and clears a tilt episode like the other alerts', () => {
+    const { effects } = run([{ tilt: true }, { tilt: true }, {}]);
+    expect(effects[1]).toEqual([{ type: 'notify', key: 'tilt' }, { type: 'haptic' }]);
+    expect(effects[2]).toEqual([{ type: 'cleared', key: 'tilt' }]);
   });
 
   it('suppresses a single-sample glitch', () => {

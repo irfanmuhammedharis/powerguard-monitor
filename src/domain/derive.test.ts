@@ -61,6 +61,7 @@ describe('worstState priority', () => {
     expect(state(all, 'device_offline')).toBe('device_offline');
     expect(state(all)).toBe('line_fault');
     expect(state({ ...all, line_fault: false })).toBe('smoke');
+    expect(state({ ...all, line_fault: false, smoke: false, tilt: true })).toBe('tilt');
     expect(state({ ...all, line_fault: false, smoke: false })).toBe('threshold_danger');
     expect(state({ rain: true, voltage: 230 })).toBe('rain');
     expect(state({ voltage: 185 })).toBe('threshold_warning');
@@ -77,12 +78,10 @@ describe('worstState priority', () => {
 });
 
 describe('labels', () => {
-  it('activeAlerts is ordered line_fault, smoke, rain', () => {
-    expect(activeAlerts(makeReading({ rain: true, smoke: true, line_fault: true }))).toEqual([
-      'line_fault',
-      'smoke',
-      'rain',
-    ]);
+  it('activeAlerts is ordered line_fault, smoke, tilt, rain', () => {
+    expect(
+      activeAlerts(makeReading({ rain: true, smoke: true, tilt: true, line_fault: true })),
+    ).toEqual(['line_fault', 'smoke', 'tilt', 'rain']);
     expect(activeAlerts(null)).toEqual([]);
   });
 
@@ -91,6 +90,7 @@ describe('labels', () => {
     expect(faultTypeLabel('unknown')).toBe('Unknown fault');
     expect(alertLabel('line_fault', 'over_current')).toBe('Line fault: Over current');
     expect(alertLabel('smoke')).toBe('Smoke detected');
+    expect(alertLabel('tilt')).toBe('Tilt detected');
     expect(alertLabel('rain')).toBe('Rain detected');
   });
 

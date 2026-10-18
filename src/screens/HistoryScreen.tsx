@@ -20,16 +20,18 @@ import { useHistory } from '../hooks/useHistory';
 import { useTheme } from '../theme/ThemeProvider';
 import { clockSeconds } from '../utils/format';
 
-type Filter = 'ALL' | 'FAULT' | 'SMOKE' | 'RAIN';
-const FILTERS: Filter[] = ['ALL', 'FAULT', 'SMOKE', 'RAIN'];
+type Filter = 'ALL' | 'FAULT' | 'SMOKE' | 'TILT' | 'RAIN';
+const FILTERS: Filter[] = ['ALL', 'FAULT', 'SMOKE', 'TILT', 'RAIN'];
 const FILTER_KEY: Record<Exclude<Filter, 'ALL'>, AlertKey> = {
   FAULT: 'line_fault',
   SMOKE: 'smoke',
+  TILT: 'tilt',
   RAIN: 'rain',
 };
 const NAME: Record<AlertKey, string> = {
   line_fault: 'Line fault',
   smoke: 'Smoke',
+  tilt: 'Tilt',
   rain: 'Rain',
 };
 
@@ -54,13 +56,17 @@ export function HistoryScreen() {
   }, [samples, filter]);
 
   const tone = (key: AlertKey) =>
-    key === 'line_fault' ? c.danger : key === 'smoke' ? c.warning : c.info;
+    key === 'line_fault' || key === 'tilt'
+      ? c.danger
+      : key === 'smoke'
+      ? c.warning
+      : c.info;
 
   const header = (
     <View>
       <Text style={[s.title, { color: c.text }]}>History</Text>
       <Text style={[s.sub, { color: c.muted }]}>
-        Fault, smoke and rain events from the last 24 hours
+        Fault, smoke, tilt and rain events from the last 24 hours
       </Text>
       <View style={s.filters}>
         {FILTERS.map(f => (
@@ -133,7 +139,7 @@ export function HistoryScreen() {
               No events in the last 24 hours
             </Text>
             <Text style={[s.emptyBody, { color: c.secondary }]}>
-              Faults, smoke and rain will appear here.
+              Faults, smoke, tilt and rain will appear here.
             </Text>
           </Card>
         )

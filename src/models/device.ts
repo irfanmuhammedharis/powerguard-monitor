@@ -12,6 +12,10 @@ export interface LiveReading {
   rain: boolean;
   smoke: boolean;
   smoke_ppm: number | null;
+  /** Unit has moved beyond the firmware's limit from its power-on position. */
+  tilt: boolean;
+  /** Degrees from the power-on position; null when not reported. */
+  tilt_deg: number | null;
   voltage: number;
   current: number;
   ts: number;
@@ -33,6 +37,8 @@ export const EMPTY_READING: LiveReading = {
   rain: false,
   smoke: false,
   smoke_ppm: null,
+  tilt: false,
+  tilt_deg: null,
   voltage: 0,
   current: 0,
   ts: 0,
@@ -63,6 +69,7 @@ export function parseLiveDetailed(
   const current = numeric(o.current);
   const ts = numeric(o.ts);
   const smokePpm = numeric(o.smoke_ppm);
+  const tiltDeg = numeric(o.tilt_deg);
   const lineFault = o.line_fault === true;
   return {
     reading: {
@@ -75,6 +82,8 @@ export function parseLiveDetailed(
       rain: o.rain === true,
       smoke: o.smoke === true,
       smoke_ppm: smokePpm !== null && smokePpm >= 0 ? smokePpm : null,
+      tilt: o.tilt === true,
+      tilt_deg: tiltDeg !== null && tiltDeg >= 0 ? tiltDeg : null,
       voltage: voltage ?? lastValid?.voltage ?? 0,
       current: Math.abs(current ?? lastValid?.current ?? 0),
       ts: ts !== null && ts > 0 ? toSeconds(ts) : receivedAt,

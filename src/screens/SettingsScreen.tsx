@@ -28,6 +28,7 @@ import type { ThemeMode } from '../theme/tokens';
 type ToggleKey =
   | 'alertFault'
   | 'alertSmoke'
+  | 'alertTilt'
   | 'alertRain'
   | 'backgroundMonitoring';
 const THEMES: ThemeMode[] = ['system', 'dark', 'light'];
@@ -38,6 +39,7 @@ export function SettingsScreen() {
   const deviceId = useSettings(s => s.deviceId);
   const alertFault = useSettings(s => s.alertFault);
   const alertSmoke = useSettings(s => s.alertSmoke);
+  const alertTilt = useSettings(s => s.alertTilt);
   const alertRain = useSettings(s => s.alertRain);
   const minVoltage = useSettings(s => s.minVoltage);
   const maxVoltage = useSettings(s => s.maxVoltage);
@@ -162,6 +164,12 @@ export function SettingsScreen() {
           alertSmoke,
           'Smoke detection',
           'Notify when smoke is detected',
+        )}
+        {toggle(
+          'alertTilt',
+          alertTilt,
+          'Tilt detection',
+          'Notify when the unit moves from its installed position',
         )}
         {toggle(
           'alertRain',

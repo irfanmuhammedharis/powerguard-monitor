@@ -57,7 +57,8 @@ const uint32_t FIREBASE_LIVE_INTERVAL_MS = 2000;
 const uint32_t FIREBASE_HISTORY_INTERVAL_S = 10;     // one history sample per 10 s ...
 const uint32_t FIREBASE_HISTORY_SLOTS = 8640;        // ... in a 24 h ring buffer
 const uint32_t FIREBASE_TOKEN_LIFETIME_MS = 50UL * 60UL * 1000UL;  // tokens last 60 min
-const uint32_t FIREBASE_RETRY_INTERVAL_MS = 30000;
+const uint32_t FIREBASE_RETRY_INTERVAL_MS = 30000;          // first retry after a failed sign-in
+const uint32_t FIREBASE_RETRY_MAX_MS = 15UL * 60UL * 1000UL;  // retries back off up to this
 const float VOLTAGE_MIN = 180.0f;
 const float VOLTAGE_MAX = 260.0f;
 
@@ -73,6 +74,7 @@ struct Reading {
   const char* faultType = "none";
   bool wet = false;
   bool gasHigh = false;
+  bool tilted = false;
   const char* voltageStatus = "";
   const char* currentStatus = "";
   const char* mq3Status = "";
@@ -317,6 +319,7 @@ String fbUid;
 bool fbHaveToken = false;
 uint32_t fbTokenTime = 0;
 uint32_t fbLastAuthAttempt = 0;
+uint32_t fbRetryDelayMs = FIREBASE_RETRY_INTERVAL_MS;
 bool fbDeniedNotified = false;
 
 // Email/password sign-in over REST. Never logs the tokens or the password.
@@ -351,6 +354,7 @@ bool firebaseSignIn() {
   fbUid = doc["localId"].as<String>();
   fbHaveToken = true;
   fbTokenTime = millis();
+  fbRetryDelayMs = FIREBASE_RETRY_INTERVAL_MS;
   Serial.printf("Firebase signed in. uid = %s\n", fbUid.c_str());
   return true;
 }
@@ -371,10 +375,12 @@ String liveJson(time_t ts) {
   char buf[256];
   snprintf(buf, sizeof(buf),
            "{\"line_fault\":%s,\"fault_type\":\"%s\",\"rain\":%s,\"smoke\":%s,"
-           "\"smoke_ppm\":%d,\"voltage\":%.1f,\"current\":%.2f,\"ts\":%lld}",
+           "\"smoke_ppm\":%d,\"tilt\":%s,\"tilt_deg\":%.1f,"
+           "\"voltage\":%.1f,\"current\":%.2f,\"ts\":%lld}",
            reading.lineFault ? "true" : "false", reading.faultType,
            reading.wet ? "true" : "false", reading.gasHigh ? "true" : "false",
-           reading.mq3, reading.voltage, reading.current, (long long)ts);
+           reading.mq3, reading.tilted ? "true" : "false", reading.tilt,
+           reading.voltage, reading.current, (long long)ts);
   return String(buf);
 }
 
@@ -416,9 +422,14 @@ void updateFirebase() {
   }
 
   if (!fbHaveToken || millis() - fbTokenTime > FIREBASE_TOKEN_LIFETIME_MS) {
-    if (fbLastAuthAttempt != 0 && millis() - fbLastAuthAttempt < FIREBASE_RETRY_INTERVAL_MS) return;
+    if (fbLastAuthAttempt != 0 && millis() - fbLastAuthAttempt < fbRetryDelayMs) return;
     fbLastAuthAttempt = millis();
-    if (!firebaseSignIn()) return;
+    if (!firebaseSignIn()) {
+      // Repeated bad logins get the account rate-limited (TOO_MANY_ATTEMPTS), so back off
+      fbRetryDelayMs = min(fbRetryDelayMs * 2, FIREBASE_RETRY_MAX_MS);
+      Serial.printf("Firebase: next sign-in attempt in %lu s\n", (unsigned long)(fbRetryDelayMs / 1000));
+      return;
+    }
   }
 
   lastLive = millis();
@@ -505,6 +516,7 @@ void sampleSensors() {
   reading.faultType = !voltageBad ? "none" : (reading.voltage > VOLTAGE_MAX ? "over_voltage" : "under_voltage");
   reading.wet = wet;
   reading.gasHigh = mq3High;
+  reading.tilted = tilted;
   reading.voltageStatus = voltageBad ? "CHECK" : "NORMAL";
   reading.currentStatus = (reading.current > 0.10f) ? "LOAD ON" : "NO LOAD";
   reading.mq3Status = mq3High ? "HIGH" : "LOW";

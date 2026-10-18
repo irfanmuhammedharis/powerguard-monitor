@@ -11,7 +11,7 @@ export interface HistoryEvent {
 
 /**
  * One event per false->true ("started") / true->false ("cleared") transition of
- * line_fault, smoke or rain between consecutive samples, newest first. The first
+ * line_fault, smoke, tilt or rain between consecutive samples, newest first. The first
  * sample never produces an event: whatever was already active began before the
  * window (FR-6).
  */

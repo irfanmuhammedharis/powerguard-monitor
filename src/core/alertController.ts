@@ -94,6 +94,7 @@ function evaluate(): void {
     enabled: {
       line_fault: s.alertFault,
       smoke: s.alertSmoke,
+      tilt: s.alertTilt,
       rain: s.alertRain,
     },
   });

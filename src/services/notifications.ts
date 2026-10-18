@@ -7,7 +7,7 @@ import { alertLabel, type AlertKey } from '../domain/derive';
 import { getJSON, keys, setJSON } from './storage';
 
 export const CHANNEL = {
-  critical: 'critical-alerts', // line fault, smoke
+  critical: 'critical-alerts', // line fault, smoke, tilt
   weather: 'weather-alerts', // rain
   monitoring: 'monitoring-service', // persistent foreground-service notification
 } as const;
@@ -23,7 +23,7 @@ export function initNotifications(): Promise<void> {
       await notifee.createChannel({
         id: CHANNEL.critical,
         name: 'Critical alerts',
-        description: 'Line faults and smoke',
+        description: 'Line faults, smoke and tilt',
         importance: AndroidImportance.HIGH,
         vibration: true,
       });
@@ -81,6 +81,7 @@ export async function ensurePermission(): Promise<PermissionStatus> {
 const BODY: Record<AlertKey, string> = {
   line_fault: 'Check the installation as soon as it is safe to do so.',
   smoke: 'Smoke was detected at the installation.',
+  tilt: 'The unit has tilted from its installed position.',
   rain: 'Rain was detected at the installation.',
 };
 

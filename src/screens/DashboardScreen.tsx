@@ -51,6 +51,7 @@ const ACCENT: Record<WorstState, keyof ThemeColors> = {
   device_offline: 'warning',
   line_fault: 'danger',
   smoke: 'danger',
+  tilt: 'danger',
   threshold_danger: 'danger',
   rain: 'info',
   threshold_warning: 'warning',
@@ -89,7 +90,10 @@ export function DashboardScreen() {
   const worst = worstState({ connectivity, reading: live, thresholds });
   const accent = error || (!live && !stale) ? c.muted : c[ACCENT[worst]];
   const primaryKey =
-    worst === 'line_fault' || worst === 'smoke' || worst === 'rain'
+    worst === 'line_fault' ||
+    worst === 'smoke' ||
+    worst === 'tilt' ||
+    worst === 'rain'
       ? worst
       : null;
   const others =
@@ -153,6 +157,15 @@ export function DashboardScreen() {
       on: !!live?.smoke,
       extra:
         live?.smoke_ppm != null ? `${Math.round(live.smoke_ppm)} ppm` : null,
+    },
+    {
+      key: 'tilt',
+      label: 'TILT',
+      icon: '⦣',
+      color: c.danger,
+      on: !!live?.tilt,
+      extra:
+        live?.tilt_deg != null ? `${live.tilt_deg.toFixed(1)}° moved` : null,
     },
     {
       key: 'line_fault',

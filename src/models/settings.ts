@@ -3,6 +3,7 @@ export interface AppSettings {
   deviceId: string;
   alertFault: boolean;
   alertSmoke: boolean;
+  alertTilt: boolean;
   alertRain: boolean;
   minVoltage: number;
   maxVoltage: number;
@@ -14,6 +15,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   deviceId: 'esp32_01',
   alertFault: true,
   alertSmoke: true,
+  alertTilt: true,
   alertRain: true,
   minVoltage: 180,
   maxVoltage: 260,
@@ -66,6 +68,7 @@ export function validateSettings(raw: unknown): AppSettings {
         : d.deviceId,
     alertFault: bool(o.alertFault, d.alertFault),
     alertSmoke: bool(o.alertSmoke, d.alertSmoke),
+    alertTilt: bool(o.alertTilt, d.alertTilt),
     alertRain: bool(o.alertRain, d.alertRain),
     minVoltage,
     maxVoltage,

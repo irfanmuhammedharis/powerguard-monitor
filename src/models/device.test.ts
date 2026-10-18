@@ -31,6 +31,19 @@ describe('device data parsing', () => {
     expect(reading?.smoke_ppm).toBe(0);
   });
 
+  it('parses tilt and drops invalid tilt angles', () => {
+    expect(parseLive({ ...valid, tilt: true, tilt_deg: 12.5 })).toMatchObject({
+      tilt: true,
+      tilt_deg: 12.5,
+    });
+    // Older firmware sends neither field
+    expect(parseLive(valid)).toMatchObject({ tilt: false, tilt_deg: null });
+    expect(parseLive({ ...valid, tilt: 'yes', tilt_deg: -3 })).toMatchObject({
+      tilt: false,
+      tilt_deg: null,
+    });
+  });
+
   it('uses last valid measurements when incoming numeric data is invalid', () => {
     const previous = parseLive(valid, null, 1_760_000_001);
     const reading = parseLive(

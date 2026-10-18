@@ -6,6 +6,8 @@ export const healthy: LiveReading = {
   rain: false,
   smoke: false,
   smoke_ppm: 412,
+  tilt: false,
+  tilt_deg: 0.4,
   voltage: 230.4,
   current: 1.82,
   ts: 1_760_000_000,

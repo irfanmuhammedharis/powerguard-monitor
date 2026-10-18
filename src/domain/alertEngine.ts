@@ -25,6 +25,7 @@ export type AlertEffect =
 export const initialAlertState: AlertState = {
   line_fault: { streak: 0, notified: false },
   smoke: { streak: 0, notified: false },
+  tilt: { streak: 0, notified: false },
   rain: { streak: 0, notified: false },
 };
 

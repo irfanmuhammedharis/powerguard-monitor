@@ -4,14 +4,15 @@ import type { Connectivity } from './connectivity';
 import { CURRENT_WARNING_RATIO, VOLTAGE_WARNING_MARGIN } from './constants';
 
 export type Level = 'ok' | 'warning' | 'danger';
-export type AlertKey = 'line_fault' | 'smoke' | 'rain';
-export const ALERT_KEYS: readonly AlertKey[] = ['line_fault', 'smoke', 'rain'];
+export type AlertKey = 'line_fault' | 'smoke' | 'tilt' | 'rain';
+export const ALERT_KEYS: readonly AlertKey[] = ['line_fault', 'smoke', 'tilt', 'rain'];
 
 export type WorstState =
   | 'phone_offline'
   | 'device_offline'
   | 'line_fault'
   | 'smoke'
+  | 'tilt'
   | 'threshold_danger'
   | 'rain'
   | 'threshold_warning'
@@ -60,6 +61,7 @@ export function worstState(i: {
   if (!r) return 'ok'; // loading: the UI shows skeletons, not the banner
   if (r.line_fault) return 'line_fault';
   if (r.smoke) return 'smoke';
+  if (r.tilt) return 'tilt';
   const levels = [
     voltageLevel(r.voltage, i.thresholds),
     currentLevel(r.current, i.thresholds),
@@ -91,7 +93,8 @@ export function alertLabel(key: AlertKey, faultType?: FaultType): string {
   if (key === 'line_fault') {
     return `Line fault: ${faultTypeLabel(faultType ?? 'unknown')}`;
   }
-  return key === 'smoke' ? 'Smoke detected' : 'Rain detected';
+  if (key === 'smoke') return 'Smoke detected';
+  return key === 'tilt' ? 'Tilt detected' : 'Rain detected';
 }
 
 /** 0-4 bars: >=-55:4, >=-65:3, >=-75:2, >=-85:1, else 0; null when unknown. */
@@ -124,6 +127,8 @@ export function worstHeadline(
       return `Line fault: ${faultTypeLabel(reading?.fault_type ?? 'unknown')}`;
     case 'smoke':
       return 'Smoke detected';
+    case 'tilt':
+      return 'Tilt detected';
     case 'threshold_danger':
       return 'Out of range';
     case 'rain':

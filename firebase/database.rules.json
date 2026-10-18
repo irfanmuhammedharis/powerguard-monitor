@@ -14,6 +14,8 @@
           "rain":       { ".validate": "newData.isBoolean()" },
           "smoke":      { ".validate": "newData.isBoolean()" },
           "smoke_ppm":  { ".validate": "newData.isNumber() && newData.val() >= 0" },
+          "tilt":       { ".validate": "newData.isBoolean()" },
+          "tilt_deg":   { ".validate": "newData.isNumber() && newData.val() >= 0" },
           "voltage":    { ".validate": "newData.isNumber()" },
           "current":    { ".validate": "newData.isNumber()" },
           "ts":         { ".validate": "newData.isNumber()" },
