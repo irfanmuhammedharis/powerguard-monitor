@@ -5,9 +5,12 @@
 #include <HTTPClient.h>
 #include <LiquidCrystal_I2C.h>
 #include <TinyGPSPlus.h>
+#include <ArduinoJson.h>
 #include <math.h>
+#include <time.h>
 
 #include "telegram_secrets.h"  // WIFI_SSID, WIFI_PASSWORD, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+#include "secrets.h"           // FIREBASE_API_KEY, FIREBASE_DATABASE_HOST, FIREBASE_USER_*, DEVICE_ID
 
 // LCD
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -30,9 +33,8 @@ const int RAIN_PIN = 32;     // Rain sensor AO
 // Thresholds
 const int RAIN_THRESHOLD = 2000;
 const int MQ3_THRESHOLD = 1500;
-const float TILT_THRESHOLD = 30.0;
 
-// Alert whenever the unit tilts/moves more than this many degrees from its last position
+// Tilt is measured from the position the unit had at power-on; alert beyond this many degrees
 const float TILT_CHANGE_THRESHOLD = 10.0;
 
 // Calibration (adjust for your modules)
@@ -50,6 +52,15 @@ const uint32_t ALERT_RETRY_INTERVAL_MS = 5000;  // retry a failed alert send
 const uint32_t WIFI_RETRY_INTERVAL_MS = 10000;
 const uint8_t ALERT_CONFIRM_READS = 2;          // consecutive bad reads before alerting
 
+// Firebase (the Android app reads /devices/<DEVICE_ID>/live, /status and /history)
+const uint32_t FIREBASE_LIVE_INTERVAL_MS = 2000;
+const uint32_t FIREBASE_HISTORY_INTERVAL_S = 10;     // one history sample per 10 s ...
+const uint32_t FIREBASE_HISTORY_SLOTS = 8640;        // ... in a 24 h ring buffer
+const uint32_t FIREBASE_TOKEN_LIFETIME_MS = 50UL * 60UL * 1000UL;  // tokens last 60 min
+const uint32_t FIREBASE_RETRY_INTERVAL_MS = 30000;
+const float VOLTAGE_MIN = 180.0f;
+const float VOLTAGE_MAX = 260.0f;
+
 // Latest readings and their status text
 struct Reading {
   float voltage = 0;
@@ -58,6 +69,10 @@ struct Reading {
   int rain = 0;
   float tilt = 0;
   bool mpuOK = false;
+  bool lineFault = false;
+  const char* faultType = "none";
+  bool wet = false;
+  bool gasHigh = false;
   const char* voltageStatus = "";
   const char* currentStatus = "";
   const char* mq3Status = "";
@@ -78,7 +93,8 @@ struct AlertState {
 AlertState voltageAlert = {"Voltage out of range", false, 0};
 AlertState mq3Alert = {"MQ3 gas level HIGH", false, 0};
 AlertState rainAlert = {"Rain / water detected", false, 0};
-AlertState tiltAlert = {"Tilt detected", false, 0};
+AlertState tiltAlert = {"Tilt changed from start position", false, 0};
+AlertState mpuAlert = {"MPU6050 not responding", false, 0};
 
 String pendingAlerts;  // alert text waiting to be delivered
 uint32_t lastAlertAttempt = 0;
@@ -204,7 +220,7 @@ String sensorSummary() {
   if (reading.mpuOK) {
     snprintf(buf, sizeof(buf),
              "Voltage: %.1f V (%s)\nCurrent: %.2f A (%s)\nMQ3: %d (%s)\n"
-             "Rain: %d (%s)\nTilt: %.1f deg (%s)",
+             "Rain: %d (%s)\nTilt: %.1f deg from start (%s)",
              reading.voltage, reading.voltageStatus,
              reading.current, reading.currentStatus,
              reading.mq3, reading.mq3Status,
@@ -266,48 +282,177 @@ void flushAlerts() {
   }
 }
 
-// Tilt from the last position: compares the gravity vector with the one saved at the
-// previous position, so a tilt in any direction counts. After an alert the current
-// position becomes the new "last position", so every further tilt alerts again.
-void checkTiltMovement(int ax, int ay, int az) {
+// Angle between the current gravity vector and the one captured at power-on, so a tilt in
+// any direction counts. Returns 0 until a valid start position has been captured.
+float tiltFromStart(int ax, int ay, int az) {
   static bool baselineValid = false;
   static float bx = 0, by = 0, bz = 0;
-  static uint8_t moveCount = 0;
-
-  if (!reading.mpuOK) {
-    moveCount = 0;
-    return;
-  }
 
   float cx = ax, cy = ay, cz = az;
+  float cmag = sqrtf(cx * cx + cy * cy + cz * cz);
+
+  // Right after waking, the MPU can return zeros; wait for a real ~1 g reading
+  if (cmag < 1000.0f) return 0;
 
   if (!baselineValid) {
     bx = cx;
     by = cy;
     bz = cz;
     baselineValid = true;
+    return 0;
+  }
+
+  float cosine = (cx * bx + cy * by + cz * bz) / (cmag * sqrtf(bx * bx + by * by + bz * bz));
+  if (cosine > 1.0f) cosine = 1.0f;
+  if (cosine < -1.0f) cosine = -1.0f;
+  return acosf(cosine) * 180.0f / PI;
+}
+
+// --------------------------------------------------------------- Firebase
+
+WiFiClientSecure fbClient;  // kept open between writes (keep-alive), database host only
+HTTPClient fbHttp;
+String fbIdToken;
+String fbUid;
+bool fbHaveToken = false;
+uint32_t fbTokenTime = 0;
+uint32_t fbLastAuthAttempt = 0;
+bool fbDeniedNotified = false;
+
+// Email/password sign-in over REST. Never logs the tokens or the password.
+bool firebaseSignIn() {
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  http.setTimeout(8000);
+
+  String url = String("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=") +
+               FIREBASE_API_KEY;
+  if (!http.begin(client, url)) return false;
+  http.addHeader("Content-Type", "application/json");
+
+  String body = String("{\"email\":\"") + jsonEscape(FIREBASE_USER_EMAIL) +
+                "\",\"password\":\"" + jsonEscape(FIREBASE_USER_PASSWORD) +
+                "\",\"returnSecureToken\":true}";
+  int code = http.POST(body);
+  String response = code > 0 ? http.getString() : String();
+  http.end();
+
+  JsonDocument doc;
+  bool parsed = response.length() > 0 && !deserializeJson(doc, response);
+
+  if (code != 200 || !parsed || !doc["idToken"].is<const char*>()) {
+    const char* reason = parsed ? (doc["error"]["message"] | "unknown") : "no response";
+    Serial.printf("Firebase sign-in failed (HTTP %d): %s\n", code, reason);
+    return false;
+  }
+
+  fbIdToken = doc["idToken"].as<String>();
+  fbUid = doc["localId"].as<String>();
+  fbHaveToken = true;
+  fbTokenTime = millis();
+  Serial.printf("Firebase signed in. uid = %s\n", fbUid.c_str());
+  return true;
+}
+
+// PUT json at `path` (e.g. "/devices/esp32_01/live"). Returns the HTTP status, or -1.
+int firebasePut(const String &path, const String &json) {
+  String url = String("https://") + FIREBASE_DATABASE_HOST + path + ".json?print=silent&auth=" + fbIdToken;
+  fbHttp.setReuse(true);
+  fbHttp.setTimeout(6000);
+  if (!fbHttp.begin(fbClient, url)) return -1;
+  fbHttp.addHeader("Content-Type", "application/json");
+  int code = fbHttp.sendRequest("PUT", json);
+  fbHttp.end();
+  return code;
+}
+
+String liveJson(time_t ts) {
+  char buf[256];
+  snprintf(buf, sizeof(buf),
+           "{\"line_fault\":%s,\"fault_type\":\"%s\",\"rain\":%s,\"smoke\":%s,"
+           "\"smoke_ppm\":%d,\"voltage\":%.1f,\"current\":%.2f,\"ts\":%lld}",
+           reading.lineFault ? "true" : "false", reading.faultType,
+           reading.wet ? "true" : "false", reading.gasHigh ? "true" : "false",
+           reading.mq3, reading.voltage, reading.current, (long long)ts);
+  return String(buf);
+}
+
+// Unix time in seconds: NTP when available, otherwise the GPS clock. 0 = not known yet.
+time_t currentUnixTime() {
+  time_t now = time(nullptr);
+  if (now >= 1700000000) return now;
+
+  if (gps.date.isValid() && gps.time.isValid() && gps.time.age() < 5000 && gps.date.year() >= 2024) {
+    struct tm t = {};
+    t.tm_year = gps.date.year() - 1900;
+    t.tm_mon = gps.date.month() - 1;
+    t.tm_mday = gps.date.day();
+    t.tm_hour = gps.time.hour();
+    t.tm_min = gps.time.minute();
+    t.tm_sec = gps.time.second();
+    return mktime(&t);  // the ESP32 default time zone is UTC
+  }
+  return 0;
+}
+
+// Writes live + status every 2 s and a history sample every 10 s, in the format the
+// Android app (and the database rules) expect. Tilt and GPS are Telegram-only.
+void updateFirebase() {
+  static uint32_t lastLive = 0;
+  static uint32_t lastHistorySlot = UINT32_MAX;
+
+  if (!haveReading || WiFi.status() != WL_CONNECTED) return;
+  if (lastLive != 0 && millis() - lastLive < FIREBASE_LIVE_INTERVAL_MS) return;
+
+  time_t now = currentUnixTime();
+  if (now == 0) {  // ts must be a real unix time: wait for NTP or a GPS clock
+    static uint32_t lastNote = 0;
+    if (millis() - lastNote > 10000) {
+      lastNote = millis();
+      Serial.println("Firebase: waiting for a clock (NTP or GPS)...");
+    }
     return;
   }
 
-  float mag = sqrtf(cx * cx + cy * cy + cz * cz) * sqrtf(bx * bx + by * by + bz * bz);
-  if (mag < 1.0f) return;
+  if (!fbHaveToken || millis() - fbTokenTime > FIREBASE_TOKEN_LIFETIME_MS) {
+    if (fbLastAuthAttempt != 0 && millis() - fbLastAuthAttempt < FIREBASE_RETRY_INTERVAL_MS) return;
+    fbLastAuthAttempt = millis();
+    if (!firebaseSignIn()) return;
+  }
 
-  float cosine = (cx * bx + cy * by + cz * bz) / mag;
-  if (cosine > 1.0f) cosine = 1.0f;
-  if (cosine < -1.0f) cosine = -1.0f;
-  float moved = acosf(cosine) * 180.0f / PI;
+  lastLive = millis();
 
-  if (moved > TILT_CHANGE_THRESHOLD) {
-    if (++moveCount >= ALERT_CONFIRM_READS) {
-      queueAlert(String("ALERT: Tilt moved ") + String(moved, 1) +
-                 " deg from last position\n" + readingSummary());
-      bx = cx;
-      by = cy;
-      bz = cz;
-      moveCount = 0;
+  const String base = String("/devices/") + DEVICE_ID;
+  int code = firebasePut(base + "/live", liveJson(now));
+
+  if (code == 401 || code == 403) {
+    // Signed in but denied: the unit's uid is not registered as the writer for this device
+    fbHaveToken = false;
+    Serial.printf("Firebase write denied (HTTP %d). Set /config/writers/%s = %s\n", code,
+                  DEVICE_ID, fbUid.c_str());
+    if (!fbDeniedNotified) {
+      fbDeniedNotified = true;
+      queueAlert(String("Firebase write denied. In Realtime Database add:\n/config/writers/") +
+                 DEVICE_ID + " = " + fbUid);
     }
-  } else {
-    moveCount = 0;
+    return;
+  }
+  if (code < 200 || code >= 300) {
+    Serial.printf("Firebase write failed (HTTP %d)\n", code);
+    return;
+  }
+  fbDeniedNotified = false;
+
+  char status[64];
+  snprintf(status, sizeof(status), "{\"last_seen\":%lld,\"rssi\":%d}", (long long)now, WiFi.RSSI());
+  firebasePut(base + "/status", String(status));
+
+  uint32_t slot = ((uint32_t)now / FIREBASE_HISTORY_INTERVAL_S) % FIREBASE_HISTORY_SLOTS;
+  if (slot != lastHistorySlot) {
+    char key[8];
+    snprintf(key, sizeof(key), "/%04u", (unsigned)slot);
+    if (firebasePut(base + "/history" + key, liveJson(now)) >= 200) lastHistorySlot = slot;
   }
 }
 
@@ -347,15 +492,19 @@ void sampleSensors() {
   // Read MPU6050
   int ax = 0, ay = 0, az = 0;
   reading.mpuOK = readMPU6050(ax, ay, az);
-  reading.tilt = reading.mpuOK ? atan2((float)ax, (float)az) * 180.0f / PI : 0;
+  reading.tilt = reading.mpuOK ? tiltFromStart(ax, ay, az) : 0;
 
   // Determine status
-  bool voltageBad = !(reading.voltage >= 180.0f && reading.voltage <= 260.0f);
+  bool voltageBad = !(reading.voltage >= VOLTAGE_MIN && reading.voltage <= VOLTAGE_MAX);
   bool mq3High = reading.mq3 > MQ3_THRESHOLD;
   bool wet = RAIN_VALUE_INCREASES_WHEN_WET ? (reading.rain > RAIN_THRESHOLD)
                                            : (reading.rain < RAIN_THRESHOLD);
-  bool tilted = !reading.mpuOK || fabs(reading.tilt) > TILT_THRESHOLD;
+  bool tilted = reading.mpuOK && reading.tilt > TILT_CHANGE_THRESHOLD;
 
+  reading.lineFault = voltageBad;
+  reading.faultType = !voltageBad ? "none" : (reading.voltage > VOLTAGE_MAX ? "over_voltage" : "under_voltage");
+  reading.wet = wet;
+  reading.gasHigh = mq3High;
   reading.voltageStatus = voltageBad ? "CHECK" : "NORMAL";
   reading.currentStatus = (reading.current > 0.10f) ? "LOAD ON" : "NO LOAD";
   reading.mq3Status = mq3High ? "HIGH" : "LOW";
@@ -373,7 +522,7 @@ void sampleSensors() {
   updateAlert(mq3Alert, mq3High);
   updateAlert(rainAlert, wet);
   updateAlert(tiltAlert, tilted);
-  checkTiltMovement(ax, ay, az);
+  updateAlert(mpuAlert, !reading.mpuOK);
 }
 
 // -------------------------------------------------------------------- LCD
@@ -481,6 +630,9 @@ void setup() {
     delay(250);
   }
 
+  configTime(0, 0, "pool.ntp.org", "time.google.com");  // unix time for Firebase timestamps
+  fbClient.setInsecure();
+
   lcd.clear();
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("Wi-Fi connected, IP %s\n", WiFi.localIP().toString().c_str());
@@ -510,6 +662,9 @@ void loop() {
 
   // Alerts go out right away, ahead of the periodic report
   flushAlerts();
+
+  // Live data for the Android app
+  updateFirebase();
 
   // Full data report: once at start-up, then every 30 s
   bool reportDue = !firstReportSent || millis() - lastReport >= REPORT_INTERVAL_MS;
