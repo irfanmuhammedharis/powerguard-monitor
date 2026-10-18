@@ -1,7 +1,0 @@
-{
-  "name": "powerguard_core",
-  "version": "1.0.0",
-  "description": "Hardware-independent measurement, fault-detection and payload logic for the PowerGuard field unit",
-  "frameworks": "*",
-  "platforms": "*"
-}

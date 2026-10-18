@@ -6,3 +6,4 @@
 
 # per-unit credentials
 include/secrets.h
+include/telegram_secrets.h
