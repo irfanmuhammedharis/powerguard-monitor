@@ -18,9 +18,8 @@ firebase/.firebaserc
 # local tooling / generated
 .claude/
 powerguard-docs.zip
-graphify-out/cache/
-graphify-out/.graphify_*
-graphify-out/cost.json
+graphify-out/
+.graphifyignore
 
 # build artifacts
 .cxx/

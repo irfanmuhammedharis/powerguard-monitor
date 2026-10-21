@@ -38,7 +38,9 @@ const int MQ3_THRESHOLD = 1500;
 const float TILT_CHANGE_THRESHOLD = 10.0;
 
 // Calibration (adjust for your modules)
-const float VOLTAGE_CALIBRATION = 230.0;
+// Mains volts per ADC-pin RMS volt. Measured: 230 V mains read 103 V with 230.0,
+// so 230.0 * 230 / 103 = 513.6. Re-derive it if the ZMPT101B trimpot is turned.
+const float VOLTAGE_CALIBRATION = 513.6;
 const float CURRENT_A_PER_V = 15.0;
 
 // Set true if analog reading increases when wet

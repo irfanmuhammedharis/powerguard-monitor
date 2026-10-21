@@ -1,9 +1,0 @@
-.pio/
-**/.pio/
-.cxx/
-**/.cxx/
-android/app/build/
-android/.gradle/
-node_modules/
-powerguard-docs.zip
-android/app/src/main/res/
